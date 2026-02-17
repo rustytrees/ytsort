@@ -1029,14 +1029,26 @@ ytd-rich-item-renderer.ytsort-hidden { display: none !important; }
       })
     );
 
-    // Search
+    // Search + category filter row
+    const filterRow = el('div', { className: 'ytsort-input-row', style: 'margin-bottom: 10px;' });
+
     const filterInput = el('input', {
       className: 'ytsort-input',
       placeholder: 'Search channels\u2026',
       type: 'text',
-      style: 'margin-bottom: 10px;',
     });
-    section.appendChild(filterInput);
+    filterRow.appendChild(filterInput);
+
+    const catFilter = el('select', { className: 'ytsort-input', style: 'width: auto; min-width: 160px;' });
+    const catFilterOpts = ['All Categories', 'Uncategorized', ...state.categories];
+    for (const label of catFilterOpts) {
+      const opt = el('option', { textContent: label });
+      opt.value = label;
+      catFilter.appendChild(opt);
+    }
+    // Default to "Uncategorized" isn't forced, but it's easy to select
+    filterRow.appendChild(catFilter);
+    section.appendChild(filterRow);
 
     // Table
     const table = el('table', { className: 'ytsort-ch-table' });
@@ -1060,13 +1072,23 @@ ytd-rich-item-renderer.ytsort-hidden { display: none !important; }
     table.appendChild(tbody);
     section.appendChild(table);
 
-    // Filter handler
-    filterInput.addEventListener('input', () => {
+    // Combined filter handler (text search + category dropdown)
+    function applyChannelFilters() {
       const q = filterInput.value.toLowerCase();
+      const selectedCat = catFilter.value;
       tbody.querySelectorAll('tr').forEach((row) => {
-        row.style.display = (row.dataset.ch || '').toLowerCase().includes(q) ? '' : 'none';
+        const name = (row.dataset.ch || '').toLowerCase();
+        const rowCat = getChannelCategory(row.dataset.ch);
+        const matchesText = !q || name.includes(q);
+        const matchesCat = selectedCat === 'All Categories' || rowCat === selectedCat;
+        row.style.display = (matchesText && matchesCat) ? '' : 'none';
       });
-    });
+    }
+    filterInput.addEventListener('input', applyChannelFilters);
+    catFilter.addEventListener('change', applyChannelFilters);
+
+    // Store the filter function so row change handlers can re-apply it
+    tbody._applyFilters = applyChannelFilters;
 
     panel.appendChild(section);
     return panel;
@@ -1088,6 +1110,9 @@ ytd-rich-item-renderer.ytsort-hidden { display: none !important; }
     select.addEventListener('change', () => {
       setChannelCategory(channelName, select.value);
       showToast(`${channelName} \u2192 ${select.value}`);
+      // Re-apply the table filter so the row hides if it no longer matches
+      const tbody = row.closest('tbody');
+      if (tbody?._applyFilters) tbody._applyFilters();
     });
 
     const td = el('td');
