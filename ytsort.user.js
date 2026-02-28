@@ -34,6 +34,7 @@
     activeFilters: `${SCRIPT_ID}_active_filters`,
     sortByDate: `${SCRIPT_ID}_sort_by_date`,
     hiddenCategories: `${SCRIPT_ID}_hidden_categories`,
+    hideShorts: `${SCRIPT_ID}_hide_shorts`,
   };
 
   const DEFAULT_CATEGORIES = [
@@ -161,6 +162,7 @@
     activeFilters: Storage.get(STORAGE_KEYS.activeFilters, []),
     sortByDate: Storage.get(STORAGE_KEYS.sortByDate, false),
     hiddenCategories: Storage.get(STORAGE_KEYS.hiddenCategories, []),
+    hideShorts: Storage.get(STORAGE_KEYS.hideShorts, false),
     uiInjected: false,
     observer: null,
     originalOrder: null,
@@ -173,6 +175,7 @@
     Storage.set(STORAGE_KEYS.activeFilters, state.activeFilters);
     Storage.set(STORAGE_KEYS.sortByDate, state.sortByDate);
     Storage.set(STORAGE_KEYS.hiddenCategories, state.hiddenCategories);
+    Storage.set(STORAGE_KEYS.hideShorts, state.hideShorts);
   }
 
   // ============================================================
@@ -752,6 +755,10 @@
 
 /* Card hiding */
 ytd-rich-item-renderer.ytsort-hidden { display: none !important; }
+
+/* Shorts shelf hiding */
+ytd-rich-shelf-renderer.ytsort-hidden { display: none !important; }
+ytd-reel-shelf-renderer.ytsort-hidden { display: none !important; }
 `;
 
   // ============================================================
@@ -835,6 +842,22 @@ ytd-rich-item-renderer.ytsort-hidden { display: none !important; }
         [document.createTextNode(state.sortByDate ? 'Sorted by Date' : 'Sort by Date')]
       )
     );
+    // --- Hide Shorts toggle ---
+    sortSection.appendChild(
+      el(
+        'button',
+        {
+          className: `ytsort-btn ${state.hideShorts ? 'sort-active' : ''}`,
+          onClick: () => {
+            state.hideShorts = !state.hideShorts;
+            saveState();
+            refreshUI();
+          },
+        },
+        [document.createTextNode(state.hideShorts ? 'Shorts: Hidden' : 'Hide Shorts')]
+      )
+    );
+
     bar.appendChild(sortSection);
     bar.appendChild(el('div', { className: 'ytsort-bar-divider' }));
 
@@ -889,6 +912,12 @@ ytd-rich-item-renderer.ytsort-hidden { display: none !important; }
     getVideoCards().forEach((card) => {
       const cat = getChannelCategory(getChannelName(card));
 
+      // Hide individual Shorts items (videos linking to /shorts/)
+      if (state.hideShorts && isShortItem(card)) {
+        card.classList.add('ytsort-hidden');
+        return;
+      }
+
       if (state.activeFilters.length === 0) {
         // "All" mode: show everything except hidden categories
         card.classList.toggle('ytsort-hidden', state.hiddenCategories.includes(cat));
@@ -896,6 +925,40 @@ ytd-rich-item-renderer.ytsort-hidden { display: none !important; }
         // Show only selected categories
         card.classList.toggle('ytsort-hidden', !state.activeFilters.includes(cat));
       }
+    });
+
+    // Hide Shorts shelves (ytd-rich-shelf-renderer containing the Shorts carousel)
+    applyShortsShelfVisibility();
+  }
+
+  /** Check if a video card is an individual Short. */
+  function isShortItem(card) {
+    // Shorts lockup model (primary indicator)
+    if (card.querySelector('ytm-shorts-lockup-view-model, ytm-shorts-lockup-view-model-v2')) return true;
+    // Overlay style attribute
+    if (card.querySelector('[overlay-style="SHORTS"]')) return true;
+    // Link pointing to /shorts/
+    const link = card.querySelector('a[href*="/shorts/"]');
+    if (link) return true;
+    return false;
+  }
+
+  /** Hide or show all Shorts shelf/reel sections on the page. */
+  function applyShortsShelfVisibility() {
+    const page = document.querySelector('ytd-browse[page-subtype="subscriptions"]');
+    if (!page) return;
+
+    // ytd-rich-shelf-renderer with a #title span containing "Shorts"
+    page.querySelectorAll('ytd-rich-shelf-renderer').forEach((shelf) => {
+      const title = shelf.querySelector('#title');
+      if (title && title.textContent.trim() === 'Shorts') {
+        shelf.classList.toggle('ytsort-hidden', state.hideShorts);
+      }
+    });
+
+    // ytd-reel-shelf-renderer (alternative Shorts shelf element)
+    page.querySelectorAll('ytd-reel-shelf-renderer').forEach((shelf) => {
+      shelf.classList.toggle('ytsort-hidden', state.hideShorts);
     });
   }
 
@@ -1376,6 +1439,7 @@ ytd-rich-item-renderer.ytsort-hidden { display: none !important; }
         state.activeFilters = [];
         state.hiddenCategories = [];
         state.sortByDate = false;
+        state.hideShorts = false;
         state.apiKey = '';
         saveState();
         showToast('All settings reset');
